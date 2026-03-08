@@ -13,7 +13,6 @@ A modern, full-stack Point of Sale (POS) and billing application designed to str
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-- [Environment Variables](#environment-variables)
 - [Usage Examples](#usage-examples)
 - [Contributing](#contributing)
 - [Tests](#tests)
