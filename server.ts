@@ -177,20 +177,35 @@ async function startServer() {
         const info = stmt.run(invoice_number, finalCustomerId || null, type, subtotal, discount, cgst_total, sgst_total, igst_total || 0, grand_total, payment_status || 'Paid', amount_paid || grand_total);
         const invoiceId = info.lastInsertRowid;
 
-        const itemStmt = db.prepare(`
-          INSERT INTO invoice_items (invoice_id, product_id, product_name, product_code, hsn_code, unit, quantity, price_ex_gst, gst_rate, cgst_amount, sgst_amount, igst_amount, total)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        
-        const updateStockStmt = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?');
+        if (items && items.length > 0) {
+          const MAX_VARIABLES = 32766;
+          const CHUNK_SIZE_INSERT = Math.floor(MAX_VARIABLES / 13);
 
-        for (const item of items) {
-          itemStmt.run(
-            invoiceId, item.product_id, item.product_name, item.product_code, item.hsn_code, item.unit,
-            item.quantity, item.price_ex_gst, item.gst_rate, item.cgst_amount, item.sgst_amount, item.igst_amount || 0, item.total
-          );
-          if (item.product_id) {
-            updateStockStmt.run(item.quantity, item.product_id);
+          let currentQuery = '';
+          let currentLength = 0;
+
+          for (let i = 0; i < items.length; i += CHUNK_SIZE_INSERT) {
+            const chunk = items.slice(i, i + CHUNK_SIZE_INSERT);
+            if (chunk.length !== currentLength) {
+              currentLength = chunk.length;
+              currentQuery = `
+                INSERT INTO invoice_items (invoice_id, product_id, product_name, product_code, hsn_code, unit, quantity, price_ex_gst, gst_rate, cgst_amount, sgst_amount, igst_amount, total)
+                VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+              `;
+            }
+
+            const insertValues = chunk.flatMap((item: any) => [
+              invoiceId, item.product_id, item.product_name, item.product_code, item.hsn_code, item.unit,
+              item.quantity, item.price_ex_gst, item.gst_rate, item.cgst_amount, item.sgst_amount, item.igst_amount || 0, item.total
+            ]);
+            db.prepare(currentQuery).run(...insertValues);
+          }
+
+          const updateStockStmt = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?');
+          for (const item of items) {
+            if (item.product_id) {
+              updateStockStmt.run(item.quantity, item.product_id);
+            }
           }
         }
 
