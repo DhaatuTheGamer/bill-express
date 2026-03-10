@@ -182,7 +182,72 @@ app.post('/api/invoices', (req, res) => {
     } = req.body;
 
     try {
-      createInvoiceTransaction(req.body);
+      db.transaction(() => {
+        let finalCustomerId = customer_id;
+        
+        // Create customer if it's a new B2B or Cash with details
+        if (!finalCustomerId && customer_name) {
+          const stmt = db.prepare('INSERT INTO customers (name, mobile, address, gstin, state) VALUES (?, ?, ?, ?, ?)');
+          const info = stmt.run(customer_name, customer_mobile || null, customer_address || null, customer_gstin || null, customer_state || null);
+          finalCustomerId = info.lastInsertRowid;
+        }
+
+        // Generate Invoice Number (RAC/YYYY-YY/XXXXX)
+        const currentYear = new Date().getFullYear();
+        const nextYear = (currentYear + 1).toString().slice(-2);
+        const prefix = `RAC/${currentYear}-${nextYear}/`;
+        
+        const lastInvoice = db.prepare("SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1").get(`${prefix}%`) as { invoice_number: string } | undefined;
+        
+        let nextNumber = 1;
+        if (lastInvoice) {
+          const parts = lastInvoice.invoice_number.split('/');
+          nextNumber = parseInt(parts[parts.length - 1], 10) + 1;
+        }
+        const invoice_number = `${prefix}${nextNumber.toString().padStart(5, '0')}`;
+
+        const stmt = db.prepare(`
+          INSERT INTO invoices (invoice_number, customer_id, type, subtotal, discount, cgst_total, sgst_total, igst_total, grand_total, payment_status, amount_paid)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const info = stmt.run(invoice_number, finalCustomerId || null, type, subtotal, discount, cgst_total, sgst_total, igst_total || 0, grand_total, payment_status || 'Paid', amount_paid || grand_total);
+        const invoiceId = info.lastInsertRowid;
+
+        if (items && items.length > 0) {
+          const MAX_VARIABLES = 32766;
+          const CHUNK_SIZE_INSERT = Math.floor(MAX_VARIABLES / 13);
+
+          let currentQuery = '';
+          let currentLength = 0;
+
+          for (let i = 0; i < items.length; i += CHUNK_SIZE_INSERT) {
+            const chunk = items.slice(i, i + CHUNK_SIZE_INSERT);
+            if (chunk.length !== currentLength) {
+              currentLength = chunk.length;
+              currentQuery = `
+                INSERT INTO invoice_items (invoice_id, product_id, product_name, product_code, hsn_code, unit, quantity, price_ex_gst, gst_rate, cgst_amount, sgst_amount, igst_amount, total)
+                VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
+              `;
+            }
+
+            const insertValues = chunk.flatMap((item: any) => [
+              invoiceId, item.product_id, item.product_name, item.product_code, item.hsn_code, item.unit,
+              item.quantity, item.price_ex_gst, item.gst_rate, item.cgst_amount, item.sgst_amount, item.igst_amount || 0, item.total
+            ]);
+            db.prepare(currentQuery).run(...insertValues);
+          }
+
+          const updateStockStmt = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?');
+          for (const item of items) {
+            if (item.product_id) {
+              updateStockStmt.run(item.quantity, item.product_id);
+            }
+          }
+        }
+
+        return invoiceId;
+      })();
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
