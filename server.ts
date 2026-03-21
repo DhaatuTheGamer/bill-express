@@ -18,9 +18,13 @@ app.use(express.json());
 
     const [login, password] = Buffer.from(match[1], 'base64').toString().split(':');
 
-    // Use environment variables for credentials, with fallbacks for development
-    const expectedUsername = process.env.ADMIN_USERNAME || 'admin';
-    const expectedPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const expectedUsername = process.env.ADMIN_USERNAME;
+    const expectedPassword = process.env.ADMIN_PASSWORD;
+
+    if (!expectedUsername || !expectedPassword) {
+      logger.error('ADMIN_USERNAME or ADMIN_PASSWORD environment variables are not set');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
 
     if (login === expectedUsername && password === expectedPassword) {
       return next();
