@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import db from './src/db/index.js';
 import logger from './src/utils/logger.js';
+import { getNextInvoiceNumber } from './src/utils/invoice.js';
 
 export const app = express();
 
@@ -9,29 +10,41 @@ app.use(express.json());
 
 
   // Authentication Middleware
-  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const authHeader = req.headers.authorization || '';
-    const match = authHeader.match(/^Basic (.+)$/);
-    if (!match) {
-      res.set('WWW-Authenticate', 'Basic realm="API"');
-      return res.status(401).json({ error: 'Authentication required' });
+  let cachedAuth: string | null = null;
+  let cachedUsername: string | undefined = undefined;
+  let cachedPassword: string | undefined = undefined;
+
+  const getExpectedAuth = () => {
+    if (process.env.ADMIN_USERNAME !== cachedUsername || process.env.ADMIN_PASSWORD !== cachedPassword) {
+      cachedUsername = process.env.ADMIN_USERNAME;
+      cachedPassword = process.env.ADMIN_PASSWORD;
+      if (!cachedUsername || !cachedPassword) {
+        cachedAuth = null;
+      } else {
+        cachedAuth = `Basic ${Buffer.from(`${cachedUsername}:${cachedPassword}`).toString('base64')}`;
+      }
     }
+    return cachedAuth;
+  };
 
-    const [login, password] = Buffer.from(match[1], 'base64').toString().split(':');
+  const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const expectedAuth = getExpectedAuth();
 
-    const expectedUsername = process.env.ADMIN_USERNAME;
-    const expectedPassword = process.env.ADMIN_PASSWORD;
-
-    if (!expectedUsername || !expectedPassword) {
+    if (!expectedAuth) {
       logger.error('ADMIN_USERNAME or ADMIN_PASSWORD environment variables are not set');
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    if (login === expectedUsername && password === expectedPassword) {
+    const authHeader = req.headers.authorization || '';
+    if (authHeader === expectedAuth) {
       return next();
     }
 
     res.set('WWW-Authenticate', 'Basic realm="API"');
+    if (!authHeader || !authHeader.startsWith('Basic ')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     return res.status(401).json({ error: 'Invalid credentials' });
   };
 
@@ -64,7 +77,7 @@ app.post('/api/products', (req, res) => {
       `);
       const info = stmt.run(code, name, category, unit, price_ex_gst, gst_rate, hsn_code, stock || 0);
       res.json({ id: info.lastInsertRowid });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -84,7 +97,7 @@ app.put('/api/products/:id', (req, res) => {
       `);
       stmt.run(code, name, category, unit, price_ex_gst, gst_rate, hsn_code, stock || 0, req.params.id);
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -93,7 +106,7 @@ app.delete('/api/products/:id', (req, res) => {
     try {
       db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -132,7 +145,7 @@ app.post('/api/customers', (req, res) => {
       `);
       const info = stmt.run(name, mobile, address, gstin, state);
       res.json({ id: info.lastInsertRowid });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -147,7 +160,7 @@ app.put('/api/customers/:id', (req, res) => {
       `);
       stmt.run(name, mobile, address, gstin, state, req.params.id);
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -198,18 +211,7 @@ app.post('/api/invoices', (req, res) => {
         }
 
         // Generate Invoice Number (RAC/YYYY-YY/XXXXX)
-        const currentYear = new Date().getFullYear();
-        const nextYear = (currentYear + 1).toString().slice(-2);
-        const prefix = `RAC/${currentYear}-${nextYear}/`;
-        
-        const lastInvoice = db.prepare("SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1").get(`${prefix}%`) as { invoice_number: string } | undefined;
-        
-        let nextNumber = 1;
-        if (lastInvoice) {
-          const parts = lastInvoice.invoice_number.split('/');
-          nextNumber = parseInt(parts[parts.length - 1], 10) + 1;
-        }
-        const invoice_number = `${prefix}${nextNumber.toString().padStart(5, '0')}`;
+        const invoice_number = getNextInvoiceNumber(db);
 
         const stmt = db.prepare(`
           INSERT INTO invoices (invoice_number, customer_id, type, subtotal, discount, cgst_total, sgst_total, igst_total, grand_total, payment_status, amount_paid)
@@ -254,7 +256,7 @@ app.post('/api/invoices', (req, res) => {
       })();
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -286,9 +288,9 @@ app.put('/api/invoices/:id/cancel', (req, res) => {
         db.prepare("UPDATE invoices SET status = 'cancelled' WHERE id = ?").run(invoiceId);
       })();
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       // Allow specific error message for "Invoice not found or already cancelled"
-      if (err.message === 'Invoice not found or already cancelled') {
+      if (err instanceof Error && err.message === 'Invoice not found or already cancelled') {
         res.status(400).json({ error: err.message });
       } else {
         res.status(400).json({ error: 'An error occurred while processing the request' });
@@ -302,7 +304,7 @@ app.put('/api/invoices/:id/payment', (req, res) => {
       db.prepare('UPDATE invoices SET payment_status = ?, amount_paid = ? WHERE id = ?')
         .run(payment_status, amount_paid, req.params.id);
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -315,6 +317,11 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
     const { store_name, address, phone, gstin, state_code, logo_url } = req.body;
+    if (typeof store_name !== 'string' || typeof address !== 'string' || typeof phone !== 'string' ||
+        typeof gstin !== 'string' || typeof state_code !== 'string' ||
+        (logo_url !== undefined && logo_url !== null && typeof logo_url !== 'string')) {
+      return res.status(400).json({ error: 'Invalid or missing required fields' });
+    }
     try {
       db.prepare(`
         UPDATE settings 
@@ -322,7 +329,7 @@ app.put('/api/settings', (req, res) => {
         WHERE id = 1
       `).run(store_name, address, phone, gstin, state_code, logo_url);
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
@@ -360,7 +367,7 @@ app.get('/api/dashboard/analytics', (req, res) => {
       `).all();
 
       res.json({ last7Days, topProducts, lowStock });
-    } catch (err: any) {
+    } catch (err) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
   });
