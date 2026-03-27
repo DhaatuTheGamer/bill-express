@@ -18,33 +18,51 @@ beforeAll(async () => {
 });
 
 describe('Authentication Security', () => {
-  it('should return 500 when environment variables are missing', async () => {
-    const auth = Buffer.from('admin:admin123').toString('base64');
+  it('should return 500 when logging in and environment variables are missing', async () => {
     const response = await request(app)
-      .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
 
     expect(response.status).toBe(500);
     expect(response.body.error).toBe('Server configuration error');
   });
 
-  it('should return 401 when using default credentials if they are NOT in env', async () => {
-    const auth = Buffer.from('admin:admin123').toString('base64');
-    const response = await request(app)
-      .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+  it('should return 401 when logging in with invalid credentials', async () => {
+    process.env.ADMIN_USERNAME = 'admin';
+    process.env.ADMIN_PASSWORD = 'password';
 
-    expect(response.status).toBe(500); // Because they are missing from env
+    const response = await request(app)
+      .post('/api/login')
+      .send({ username: 'admin', password: 'wrongpassword' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('Invalid credentials');
+
+    delete process.env.ADMIN_USERNAME;
+    delete process.env.ADMIN_PASSWORD;
   });
 
-  it('should work when environment variables are set', async () => {
+  it('should set an auth token cookie when logging in successfully and verify access', async () => {
     process.env.ADMIN_USERNAME = 'validuser';
     process.env.ADMIN_PASSWORD = 'validpassword';
 
-    const auth = Buffer.from('validuser:validpassword').toString('base64');
+    const loginResponse = await request(app)
+      .post('/api/login')
+      .send({ username: 'validuser', password: 'validpassword' });
+
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.success).toBe(true);
+
+    const cookies = loginResponse.headers['set-cookie'];
+    expect(cookies).toBeDefined();
+
+    const cookieString = Array.isArray(cookies) ? cookies.find(c => c.startsWith('auth_token=')) : cookies;
+    expect(cookieString).toBeDefined();
+
+    // Verify access
     const response = await request(app)
       .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+      .set('Cookie', cookieString);
 
     expect(response.status).toBe(200);
 

@@ -1,23 +1,59 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import cookieParser from 'cookie-parser';
 import db from './src/db/index.js';
 import logger from './src/utils/logger.js';
 
 export const app = express();
 
 app.use(express.json());
+app.use(cookieParser());
 
+  // Authentication Routes
+  app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+
+    const expectedUsername = process.env.ADMIN_USERNAME;
+    const expectedPassword = process.env.ADMIN_PASSWORD;
+
+    if (!expectedUsername || !expectedPassword) {
+      logger.error('ADMIN_USERNAME or ADMIN_PASSWORD environment variables are not set');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    if (username === expectedUsername && password === expectedPassword) {
+      const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+      res.cookie('auth_token', credentials, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      });
+      return res.json({ success: true });
+    }
+
+    return res.status(401).json({ error: 'Invalid credentials' });
+  });
+
+  app.post('/api/logout', (req, res) => {
+    res.clearCookie('auth_token');
+    return res.json({ success: true });
+  });
 
   // Authentication Middleware
   const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const authHeader = req.headers.authorization || '';
-    const match = authHeader.match(/^Basic (.+)$/);
-    if (!match) {
-      res.set('WWW-Authenticate', 'Basic realm="API"');
+    // Exclude login and logout from auth requirements
+    if (req.path === '/login' || req.path === '/logout') {
+      return next();
+    }
+
+    const authToken = req.cookies.auth_token;
+
+    if (!authToken) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const [login, password] = Buffer.from(match[1], 'base64').toString().split(':');
+    const [login, password] = Buffer.from(authToken, 'base64').toString().split(':');
 
     const expectedUsername = process.env.ADMIN_USERNAME;
     const expectedPassword = process.env.ADMIN_PASSWORD;
@@ -31,7 +67,6 @@ app.use(express.json());
       return next();
     }
 
-    res.set('WWW-Authenticate', 'Basic realm="API"');
     return res.status(401).json({ error: 'Invalid credentials' });
   };
 

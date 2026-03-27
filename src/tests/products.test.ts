@@ -1,13 +1,26 @@
 // @vitest-environment node
-import { test, describe, afterAll as after, assert } from 'vitest';
+import { test, describe, afterAll as after, beforeAll, assert } from 'vitest';
 import request from 'supertest';
 process.env.ADMIN_USERNAME = 'admin';
 process.env.ADMIN_PASSWORD = 'password';
-const authHeader = 'Basic ' + Buffer.from('admin:password').toString('base64');
-import { app } from '../../server.js';
+import { appPromise } from '../../server.js';
+import type { Express } from 'express';
 import db from '../db/index.js';
 
 describe('Products API', () => {
+  let app: Express;
+  let authCookie: string;
+
+  beforeAll(async () => {
+    app = await appPromise;
+    const res = await request(app)
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
+
+    const cookies = res.headers['set-cookie'];
+    authCookie = Array.isArray(cookies) ? cookies.find(c => c.startsWith('auth_token=')) || '' : cookies || '';
+  });
+
   const testProduct = {
     code: 'TEST_DUP_01',
     name: 'Duplicate Test Product',
@@ -28,7 +41,7 @@ describe('Products API', () => {
     // 1. Insert the product for the first time
     const res1 = await request(app)
       .post('/api/products')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send(testProduct)
       .expect(200);
 
@@ -37,7 +50,7 @@ describe('Products API', () => {
     // 2. Insert the same product again to trigger UNIQUE constraint violation
     const res2 = await request(app)
       .post('/api/products')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send(testProduct)
       .expect(400);
 
