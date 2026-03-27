@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Trash2 } from 'lucide-react';
-import { apiFetch } from '../utils/api';
+import { apiFetch, handleApiError } from '../utils/api';
 
 export default function NewBill() {
   const navigate = useNavigate();
@@ -169,8 +169,7 @@ export default function NewBill() {
         alert(data.error);
       }
     } catch (err) {
-      console.error(err);
-      alert('Failed to save invoice');
+      handleApiError(err, 'Failed to save invoice');
     }
   };
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, Search, Download, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
-import { apiFetch } from '../utils/api.js';
+import { apiFetch, handleApiError } from '../utils/api.js';
 import { Invoice } from '../types.js';
 
 export default function Invoices() {
@@ -27,7 +27,7 @@ export default function Invoices() {
         await apiFetch(`/api/invoices/${id}/cancel`, { method: 'PUT' });
         fetchInvoices();
       } catch (err) {
-        alert('Failed to cancel invoice');
+        handleApiError(err, 'Failed to cancel invoice');
       }
     }
   };
@@ -46,7 +46,7 @@ export default function Invoices() {
           });
           fetchInvoices();
         } catch (err) {
-          alert('Failed to update payment');
+          handleApiError(err, 'Failed to update payment');
         }
       }
     }

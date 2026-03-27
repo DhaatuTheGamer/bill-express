@@ -20,3 +20,8 @@ export const apiFetch = async (input: RequestInfo | URL, init?: RequestInit): Pr
 
   return response;
 };
+
+export const handleApiError = (err: unknown, defaultMessage: string) => {
+  console.error(err);
+  alert(defaultMessage);
+};

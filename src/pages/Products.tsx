@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, Filter, ArrowUpDown } from 'lucide-react';
-import { apiFetch } from '../utils/api.js';
+import { apiFetch, handleApiError } from '../utils/api.js';
 import { Product } from '../types.js';
 
 export default function Products() {
@@ -66,8 +66,7 @@ export default function Products() {
       setEditingProduct(null);
       fetchProducts();
     } catch (err) {
-      console.error(err);
-      alert('An error occurred while saving the product.');
+      handleApiError(err, 'An error occurred while saving the product.');
     }
   };
 

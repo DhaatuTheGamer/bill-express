@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Edit2, Save, X, Download } from 'lucide-react';
-import { apiFetch } from '../utils/api.js';
+import { apiFetch, handleApiError } from '../utils/api.js';
 import { Customer } from '../types.js';
 
 export default function Customers() {
@@ -34,8 +34,7 @@ export default function Customers() {
       setEditingId(null);
       fetchCustomers();
     } catch (err) {
-      console.error(err);
-      alert('Failed to update customer');
+      handleApiError(err, 'Failed to update customer');
     }
   };
 
