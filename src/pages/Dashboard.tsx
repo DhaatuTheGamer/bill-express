@@ -20,27 +20,21 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    apiFetch('/api/invoices')
-      .then(res => res.json())
-      .then((data: Invoice[]) => {
-        const today = new Date().toISOString().split('T')[0];
-        const todayInvoices = data.filter((i: Invoice) => i.date.startsWith(today) && i.status === 'active');
-        const todaySales = todayInvoices.reduce((sum: number, i: Invoice) => sum + i.grand_total, 0);
-        
-        setStats(s => ({ ...s, todayInvoices: todayInvoices.length, todaySales }));
-      });
-      
-    apiFetch('/api/products')
-      .then(res => res.json())
-      .then((data: Product[]) => setStats(s => ({ ...s, totalProducts: data.length })));
-      
-    apiFetch('/api/customers')
-      .then(res => res.json())
-      .then((data: Customer[]) => setStats(s => ({ ...s, totalCustomers: data.length })));
-      
     apiFetch('/api/dashboard/analytics')
       .then(res => res.json())
-      .then(data => setAnalytics(data));
+      .then(data => {
+        setStats({
+          todaySales: data.todaySales,
+          todayInvoices: data.todayInvoices,
+          totalProducts: data.totalProducts,
+          totalCustomers: data.totalCustomers,
+        });
+        setAnalytics({
+          last7Days: data.last7Days,
+          topProducts: data.topProducts,
+          lowStock: data.lowStock
+        });
+      });
   }, []);
 
   return (
