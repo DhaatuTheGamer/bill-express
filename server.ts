@@ -186,6 +186,43 @@ app.post('/api/invoices', (req, res) => {
       payment_status, amount_paid
     } = req.body;
 
+    if (
+      typeof type !== 'string' ||
+      typeof subtotal !== 'number' ||
+      typeof discount !== 'number' ||
+      typeof cgst_total !== 'number' ||
+      typeof sgst_total !== 'number' ||
+      typeof grand_total !== 'number' ||
+      (igst_total !== undefined && typeof igst_total !== 'number') ||
+      (customer_id !== undefined && customer_id !== null && typeof customer_id !== 'number') ||
+      (customer_name !== undefined && typeof customer_name !== 'string') ||
+      (customer_mobile !== undefined && typeof customer_mobile !== 'string') ||
+      (customer_address !== undefined && typeof customer_address !== 'string') ||
+      (customer_gstin !== undefined && typeof customer_gstin !== 'string') ||
+      (customer_state !== undefined && typeof customer_state !== 'string') ||
+      (payment_status !== undefined && typeof payment_status !== 'string') ||
+      (amount_paid !== undefined && typeof amount_paid !== 'number') ||
+      !Array.isArray(items) ||
+      !items.every(
+        (item: any) =>
+          item && typeof item === 'object' &&
+          (item.product_id === undefined || item.product_id === null || typeof item.product_id === 'number') &&
+          typeof item.product_name === 'string' &&
+          typeof item.product_code === 'string' &&
+          typeof item.hsn_code === 'string' &&
+          typeof item.unit === 'string' &&
+          typeof item.quantity === 'number' &&
+          typeof item.price_ex_gst === 'number' &&
+          typeof item.gst_rate === 'number' &&
+          typeof item.cgst_amount === 'number' &&
+          typeof item.sgst_amount === 'number' &&
+          (item.igst_amount === undefined || typeof item.igst_amount === 'number') &&
+          typeof item.total === 'number'
+      )
+    ) {
+      return res.status(400).json({ error: 'Invalid or missing required fields' });
+    }
+
     try {
       db.transaction(() => {
         let finalCustomerId = customer_id;
