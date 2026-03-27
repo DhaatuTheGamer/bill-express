@@ -330,6 +330,15 @@ app.put('/api/settings', (req, res) => {
   // Dashboard Analytics
 app.get('/api/dashboard/analytics', (req, res) => {
     try {
+      // Overall Stats
+      const stats = db.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM invoices WHERE date >= date('now', 'start of day') AND date < date('now', '+1 day', 'start of day') AND status = 'active') as todayInvoices,
+          (SELECT COALESCE(SUM(grand_total), 0) FROM invoices WHERE date >= date('now', 'start of day') AND date < date('now', '+1 day', 'start of day') AND status = 'active') as todaySales,
+          (SELECT COUNT(*) FROM products) as totalProducts,
+          (SELECT COUNT(*) FROM customers) as totalCustomers
+      `).get() as { todayInvoices: number, todaySales: number, totalProducts: number, totalCustomers: number };
+
       // Sales over last 7 days
       const last7Days = db.prepare(`
         SELECT date(date) as day, SUM(grand_total) as sales
@@ -359,7 +368,7 @@ app.get('/api/dashboard/analytics', (req, res) => {
         LIMIT 5
       `).all();
 
-      res.json({ last7Days, topProducts, lowStock });
+      res.json({ ...stats, last7Days, topProducts, lowStock });
     } catch (err: any) {
       res.status(400).json({ error: 'An error occurred while processing the request' });
     }
