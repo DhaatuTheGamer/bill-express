@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Settings from './Settings';
 import { apiFetch } from '../utils/api.js';
+import { logger } from '../utils/logger.js';
 
 // Mock apiFetch
 vi.mock('../utils/api.js', () => ({
@@ -19,17 +20,17 @@ const mockSettings = {
 };
 
 describe('Settings Component', () => {
-  let consoleErrorSpy: any;
+  let loggerErrorSpy: any;
   let alertSpy: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
     alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    consoleErrorSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
     alertSpy.mockRestore();
   });
 
@@ -115,7 +116,7 @@ describe('Settings Component', () => {
       }));
     });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(testError);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(testError);
     expect(alertSpy).toHaveBeenCalledWith('Failed to save settings');
   });
 });
