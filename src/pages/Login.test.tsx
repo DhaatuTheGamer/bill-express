@@ -45,14 +45,16 @@ describe('Login Component', () => {
     const expectedCredentials = btoa('admin:admin123');
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/health', {
+      expect(global.fetch).toHaveBeenCalledWith('/api/login', {
+        method: 'POST',
         headers: {
-          'Authorization': `Basic ${expectedCredentials}`
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username: 'admin', password: 'admin123' })
       });
     });
 
-    expect(localStorage.getItem('auth_credentials')).toBe(expectedCredentials);
+    expect(localStorage.getItem('isAuthenticated')).toBe('true');
     expect(mockOnLogin).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/invalid username or password/i)).not.toBeInTheDocument();
   });
@@ -79,7 +81,6 @@ describe('Login Component', () => {
       expect(screen.getByText('Invalid username or password')).toBeInTheDocument();
     });
 
-    expect(localStorage.getItem('auth_credentials')).toBeNull();
     expect(mockOnLogin).not.toHaveBeenCalled();
   });
 
@@ -102,7 +103,6 @@ describe('Login Component', () => {
       expect(screen.getByText('An error occurred while signing in')).toBeInTheDocument();
     });
 
-    expect(localStorage.getItem('auth_credentials')).toBeNull();
     expect(mockOnLogin).not.toHaveBeenCalled();
   });
 });

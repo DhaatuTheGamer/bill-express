@@ -10,15 +10,16 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
     setError('');
 
     try {
-      const credentials = btoa(`${username}:${password}`);
-      const res = await fetch('/api/health', {
+      const res = await fetch('/api/login', {
+        method: 'POST',
         headers: {
-          'Authorization': `Basic ${credentials}`
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
       });
 
       if (res.ok) {
-        localStorage.setItem('auth_credentials', credentials);
+        localStorage.setItem('isAuthenticated', 'true');
         onLogin();
       } else {
         setError('Invalid username or password');

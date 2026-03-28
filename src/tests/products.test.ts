@@ -3,11 +3,19 @@ import { test, describe, afterAll as after, assert } from 'vitest';
 import request from 'supertest';
 process.env.ADMIN_USERNAME = 'admin';
 process.env.ADMIN_PASSWORD = 'password';
-const authHeader = 'Basic ' + Buffer.from('admin:password').toString('base64');
+
 import { app } from '../../server.js';
 import db from '../db/index.js';
 
+let authCookie: string;
+
 describe('Products API', () => {
+  test('login for cookie', async () => {
+    const loginRes = await request(app)
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
+    authCookie = loginRes.headers['set-cookie'] as unknown as string;
+  });
   const testProduct = {
     code: 'TEST_DUP_01',
     name: 'Duplicate Test Product',
@@ -28,7 +36,7 @@ describe('Products API', () => {
     // 1. Insert the product for the first time
     const res1 = await request(app)
       .post('/api/products')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send(testProduct)
       .expect(200);
 
@@ -37,7 +45,7 @@ describe('Products API', () => {
     // 2. Insert the same product again to trigger UNIQUE constraint violation
     const res2 = await request(app)
       .post('/api/products')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send(testProduct)
       .expect(400);
 

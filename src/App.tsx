@@ -25,8 +25,12 @@ export default function App() {
   }, [isAuthenticated]);
 
   const handleLogin = () => setIsAuthenticated(true);
-  const handleLogout = () => {
-    localStorage.removeItem('auth_credentials');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to logout from server', err);
+    }
     setIsAuthenticated(false);
   };
 

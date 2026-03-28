@@ -19,20 +19,18 @@ beforeAll(async () => {
 
 describe('Authentication Security', () => {
   it('should return 500 when environment variables are missing', async () => {
-    const auth = Buffer.from('admin:admin123').toString('base64');
     const response = await request(app)
-      .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
 
     expect(response.status).toBe(500);
     expect(response.body.error).toBe('Server configuration error');
   });
 
-  it('should return 401 when using default credentials if they are NOT in env', async () => {
-    const auth = Buffer.from('admin:admin123').toString('base64');
+  it('should return 500 when using default credentials if they are NOT in env', async () => {
     const response = await request(app)
-      .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
 
     expect(response.status).toBe(500); // Because they are missing from env
   });
@@ -41,12 +39,19 @@ describe('Authentication Security', () => {
     process.env.ADMIN_USERNAME = 'validuser';
     process.env.ADMIN_PASSWORD = 'validpassword';
 
-    const auth = Buffer.from('validuser:validpassword').toString('base64');
     const response = await request(app)
-      .get('/api/health')
-      .set('Authorization', `Basic ${auth}`);
+      .post('/api/login')
+      .send({ username: 'validuser', password: 'validpassword' });
 
     expect(response.status).toBe(200);
+
+    const cookies = response.headers['set-cookie'];
+
+    const healthResponse = await request(app)
+      .get('/api/health')
+      .set('Cookie', cookies);
+
+    expect(healthResponse.status).toBe(200);
 
     // Clean up
     delete process.env.ADMIN_USERNAME;

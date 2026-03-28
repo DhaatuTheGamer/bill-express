@@ -6,15 +6,20 @@ import db from '../src/db/index.js';
 process.env.NODE_ENV = 'test';
 process.env.ADMIN_USERNAME = 'admin';
 process.env.ADMIN_PASSWORD = 'password';
-const authHeader = 'Basic ' + Buffer.from('admin:password').toString('base64');
+
 
 import { appPromise } from '../server.js';
 import type { Express } from 'express';
 
 let app: Express;
+let authCookie: string;
 
 beforeAll(async () => {
     app = await appPromise;
+    const loginRes = await request(app)
+      .post('/api/login')
+      .send({ username: 'admin', password: 'password' });
+    authCookie = loginRes.headers['set-cookie'] as unknown as string;
 });
 
 beforeEach(() => {
@@ -25,7 +30,7 @@ describe('Customers API Validation', () => {
   it('should create a customer with valid data', async () => {
     const response = await request(app)
       .post('/api/customers')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send({
         name: 'John Doe',
         mobile: '1234567890',
@@ -41,7 +46,7 @@ describe('Customers API Validation', () => {
   it('should create a customer with only required data', async () => {
     const response = await request(app)
       .post('/api/customers')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send({
         name: 'Jane Doe'
       });
@@ -53,7 +58,7 @@ describe('Customers API Validation', () => {
   it('should reject creating a customer with invalid name type', async () => {
     const response = await request(app)
       .post('/api/customers')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send({
         name: { first: 'John', last: 'Doe' }
       });
@@ -65,7 +70,7 @@ describe('Customers API Validation', () => {
   it('should reject creating a customer with invalid mobile type', async () => {
     const response = await request(app)
       .post('/api/customers')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send({
         name: 'John Doe',
         mobile: 1234567890 // number instead of string
@@ -78,7 +83,7 @@ describe('Customers API Validation', () => {
   it('should reject creating a customer with missing name', async () => {
     const response = await request(app)
       .post('/api/customers')
-      .set('Authorization', authHeader)
+      .set('Cookie', authCookie)
       .send({
         mobile: '1234567890'
       });
@@ -99,7 +104,7 @@ describe('Customers API Validation', () => {
     it('should update a customer with valid data', async () => {
       const response = await request(app)
         .put(`/api/customers/${customerId}`)
-        .set('Authorization', authHeader)
+        .set('Cookie', authCookie)
         .send({
           name: 'Updated Customer',
           mobile: '0000000000'
@@ -112,7 +117,7 @@ describe('Customers API Validation', () => {
     it('should reject updating a customer with invalid data types', async () => {
       const response = await request(app)
         .put(`/api/customers/${customerId}`)
-        .set('Authorization', authHeader)
+        .set('Cookie', authCookie)
         .send({
           name: 'Updated Customer',
           state: ['New York'] // array instead of string

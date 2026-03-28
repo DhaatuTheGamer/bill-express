@@ -23,45 +23,20 @@ describe('apiFetch', () => {
     expect(mockFetch).toHaveBeenCalledWith('/test-endpoint', expect.anything());
   });
 
-  it('should add Authorization header when credentials exist in localStorage', async () => {
-    const credentials = 'test-user:test-password';
-    localStorage.setItem('auth_credentials', credentials);
-
+  it('should set credentials to same-origin by default', async () => {
     await apiFetch('/test-endpoint');
 
     const fetchArgs = mockFetch.mock.calls[0];
     const init = fetchArgs[1];
-    const headers = init.headers as Headers;
-
-    expect(headers.get('Authorization')).toBe(`Basic ${credentials}`);
+    expect(init.credentials).toBe('same-origin');
   });
 
-  it('should not add Authorization header when credentials do not exist', async () => {
-    await apiFetch('/test-endpoint');
+  it('should allow overriding credentials option', async () => {
+    await apiFetch('/test-endpoint', { credentials: 'omit' });
 
     const fetchArgs = mockFetch.mock.calls[0];
     const init = fetchArgs[1];
-    const headers = init.headers as Headers;
-
-    expect(headers.has('Authorization')).toBe(false);
-  });
-
-  it('should preserve and merge existing headers', async () => {
-    const credentials = 'test-user:test-password';
-    localStorage.setItem('auth_credentials', credentials);
-
-    await apiFetch('/test-endpoint', {
-      headers: {
-        'X-Custom-Header': 'custom-value',
-      },
-    });
-
-    const fetchArgs = mockFetch.mock.calls[0];
-    const init = fetchArgs[1];
-    const headers = init.headers as Headers;
-
-    expect(headers.get('X-Custom-Header')).toBe('custom-value');
-    expect(headers.get('Authorization')).toBe(`Basic ${credentials}`);
+    expect(init.credentials).toBe('omit');
   });
 
   it('should return the fetch response', async () => {

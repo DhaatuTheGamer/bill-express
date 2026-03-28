@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import cookieParser from 'cookie-parser';
 import db from './src/db/index.js';
 import logger from './src/utils/logger.js';
 import { getNextInvoiceNumber } from './src/utils/invoice.js';
@@ -7,48 +8,74 @@ import { getNextInvoiceNumber } from './src/utils/invoice.js';
 export const app = express();
 
 app.use(express.json());
+app.use(cookieParser());
 
 
   // Authentication Middleware
-  let cachedAuth: string | null = null;
   let cachedUsername: string | undefined = undefined;
   let cachedPassword: string | undefined = undefined;
+  let cachedAuthToken: string | null = null;
 
-  const getExpectedAuth = () => {
+  const getExpectedCredentials = () => {
     if (process.env.ADMIN_USERNAME !== cachedUsername || process.env.ADMIN_PASSWORD !== cachedPassword) {
       cachedUsername = process.env.ADMIN_USERNAME;
       cachedPassword = process.env.ADMIN_PASSWORD;
       if (!cachedUsername || !cachedPassword) {
-        cachedAuth = null;
+        cachedAuthToken = null;
       } else {
-        cachedAuth = `Basic ${Buffer.from(`${cachedUsername}:${cachedPassword}`).toString('base64')}`;
+        cachedAuthToken = Buffer.from(`${cachedUsername}:${cachedPassword}`).toString('base64');
       }
     }
-    return cachedAuth;
+    return { username: cachedUsername, password: cachedPassword, token: cachedAuthToken };
   };
 
   const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const expectedAuth = getExpectedAuth();
+    const { token } = getExpectedCredentials();
 
-    if (!expectedAuth) {
+    if (!token) {
       logger.error('ADMIN_USERNAME or ADMIN_PASSWORD environment variables are not set');
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    const authHeader = req.headers.authorization || '';
-    if (authHeader === expectedAuth) {
+    const authToken = req.cookies.auth_token;
+    if (authToken === token) {
       return next();
     }
 
-    res.set('WWW-Authenticate', 'Basic realm="API"');
-    if (!authHeader || !authHeader.startsWith('Basic ')) {
-      return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'Authentication required' });
+  };
+
+  app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    const { username: expectedUsername, password: expectedPassword, token } = getExpectedCredentials();
+
+    if (!token) {
+      logger.error('ADMIN_USERNAME or ADMIN_PASSWORD environment variables are not set');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    if (username === expectedUsername && password === expectedPassword) {
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        path: '/',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      });
+      return res.json({ success: true });
     }
 
     return res.status(401).json({ error: 'Invalid credentials' });
-  };
+  });
+
+  app.post('/api/logout', (req, res) => {
+    res.clearCookie('auth_token', { path: '/' });
+    res.json({ success: true });
+  });
 
   app.use('/api', (req, res, next) => {
+    if (req.path === '/login' || req.path === '/logout') {
+      return next();
+    }
     return requireAuth(req, res, next);
   });
 
