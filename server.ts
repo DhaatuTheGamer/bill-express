@@ -1,12 +1,13 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import crypto from 'crypto';
 import db from './src/db/index.js';
 import logger from './src/utils/logger.js';
 import { getNextInvoiceNumber } from './src/utils/invoice.js';
 
 export const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 
   // Authentication Middleware
@@ -36,7 +37,19 @@ app.use(express.json());
     }
 
     const authHeader = req.headers.authorization || '';
-    if (authHeader === expectedAuth) {
+
+    const expectedBuffer = Buffer.from(expectedAuth);
+    const providedBuffer = Buffer.from(authHeader);
+
+    let valid = false;
+    if (expectedBuffer.length === providedBuffer.length) {
+      valid = crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+    } else {
+      crypto.timingSafeEqual(expectedBuffer, expectedBuffer);
+      valid = false;
+    }
+
+    if (valid) {
       return next();
     }
 
@@ -183,6 +196,8 @@ app.put('/api/customers/:id', (req, res) => {
     }
   });
 
+const isValidAmount = (n: any) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+
   // Invoices
 app.get('/api/invoices', (req, res) => {
     const invoices = db.prepare(`
@@ -219,12 +234,12 @@ app.post('/api/invoices', (req, res) => {
 
     if (
       typeof type !== 'string' ||
-      typeof subtotal !== 'number' ||
-      typeof discount !== 'number' ||
-      typeof cgst_total !== 'number' ||
-      typeof sgst_total !== 'number' ||
-      typeof grand_total !== 'number' ||
-      (igst_total !== undefined && typeof igst_total !== 'number') ||
+      !isValidAmount(subtotal) ||
+      !isValidAmount(discount) ||
+      !isValidAmount(cgst_total) ||
+      !isValidAmount(sgst_total) ||
+      !isValidAmount(grand_total) ||
+      (igst_total !== undefined && !isValidAmount(igst_total)) ||
       (customer_id !== undefined && customer_id !== null && typeof customer_id !== 'number') ||
       (customer_name !== undefined && typeof customer_name !== 'string') ||
       (customer_mobile !== undefined && typeof customer_mobile !== 'string') ||
@@ -232,7 +247,7 @@ app.post('/api/invoices', (req, res) => {
       (customer_gstin !== undefined && typeof customer_gstin !== 'string') ||
       (customer_state !== undefined && typeof customer_state !== 'string') ||
       (payment_status !== undefined && typeof payment_status !== 'string') ||
-      (amount_paid !== undefined && typeof amount_paid !== 'number') ||
+      (amount_paid !== undefined && !isValidAmount(amount_paid)) ||
       !Array.isArray(items) ||
       !items.every(
         (item: any) =>
@@ -242,13 +257,13 @@ app.post('/api/invoices', (req, res) => {
           typeof item.product_code === 'string' &&
           typeof item.hsn_code === 'string' &&
           typeof item.unit === 'string' &&
-          typeof item.quantity === 'number' &&
-          typeof item.price_ex_gst === 'number' &&
-          typeof item.gst_rate === 'number' &&
-          typeof item.cgst_amount === 'number' &&
-          typeof item.sgst_amount === 'number' &&
-          (item.igst_amount === undefined || typeof item.igst_amount === 'number') &&
-          typeof item.total === 'number'
+          isValidAmount(item.quantity) &&
+          isValidAmount(item.price_ex_gst) &&
+          isValidAmount(item.gst_rate) &&
+          isValidAmount(item.cgst_amount) &&
+          isValidAmount(item.sgst_amount) &&
+          (item.igst_amount === undefined || isValidAmount(item.igst_amount)) &&
+          isValidAmount(item.total)
       )
     ) {
       return res.status(400).json({ error: 'Invalid or missing required fields' });
@@ -308,28 +323,9 @@ app.post('/api/invoices', (req, res) => {
           }
 
           if (stockUpdates.size > 0) {
-            const MAX_VARIABLES = 32766;
-            const CHUNK_SIZE_UPDATE = Math.floor(MAX_VARIABLES / 3); // 2 parameters for CASE, 1 for IN clause
-
-            const updateEntries = Array.from(stockUpdates.entries());
-
-            for (let i = 0; i < updateEntries.length; i += CHUNK_SIZE_UPDATE) {
-              const chunk = updateEntries.slice(i, i + CHUNK_SIZE_UPDATE);
-
-              let query = 'UPDATE products SET stock = stock - CASE id ';
-              const values = [];
-              const ids = [];
-
-              for (const [id, quantity] of chunk) {
-                query += 'WHEN ? THEN ? ';
-                values.push(id, quantity);
-                ids.push(id);
-              }
-
-              query += `END WHERE id IN (${chunk.map(() => '?').join(', ')})`;
-              values.push(...ids);
-
-              db.prepare(query).run(...values);
+            const updateStockStmt = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?');
+            for (const [id, quantity] of stockUpdates.entries()) {
+              updateStockStmt.run(quantity, id);
             }
           }
         }
