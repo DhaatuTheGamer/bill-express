@@ -16,6 +16,59 @@ beforeAll(async () => {
     app = await appPromise;
 });
 
+describe('POST /api/products security validation', () => {
+  it('should return 400 when required fields are missing', async () => {
+    const response = await request(app)
+      .post('/api/products')
+      .set('Authorization', authHeader)
+      .send({
+        name: 'Product Name',
+        category: 'Test Category',
+        // Missing code, unit, price_ex_gst, gst_rate, hsn_code
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid or missing required fields');
+  });
+
+  it('should return 400 when price_ex_gst is not a number', async () => {
+    const response = await request(app)
+      .post('/api/products')
+      .set('Authorization', authHeader)
+      .send({
+        code: 'PROD001',
+        name: 'Product Name',
+        category: 'Test Category',
+        unit: 'kg',
+        price_ex_gst: '100', // Invalid: should be a number
+        gst_rate: 18,
+        hsn_code: '123456',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid or missing required fields');
+  });
+
+  it('should return 400 when stock is provided but is not a number', async () => {
+    const response = await request(app)
+      .post('/api/products')
+      .set('Authorization', authHeader)
+      .send({
+        code: 'PROD001',
+        name: 'Product Name',
+        category: 'Test Category',
+        unit: 'kg',
+        price_ex_gst: 100,
+        gst_rate: 18,
+        hsn_code: '123456',
+        stock: '50', // Invalid: should be a number
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('Invalid or missing required fields');
+  });
+});
+
 describe('PUT /api/settings security validation', () => {
   it('should return 400 when store_name is not a string', async () => {
     const response = await request(app)
